@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
@@ -229,4 +230,5 @@ app.post('/webhook', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Serveur actif sur le port ${PORT}`);
+
 });
