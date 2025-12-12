@@ -171,7 +171,7 @@ async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée (Clé manquante).";
     try {
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro",
+            model: "gemini-1.5-flash",
             generationConfig: { responseMimeType: isJson ? "application/json" : "text/plain" }
         });
         const result = await model.generateContent(prompt);
@@ -232,3 +232,4 @@ app.listen(PORT, () => {
     console.log(`Serveur actif sur le port ${PORT}`);
 
 });
+
