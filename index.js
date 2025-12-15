@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION FINALE
+// MOTEUR SAAS AI BELGIUM - VERSION FINALE (CORRIGÉE)
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -18,7 +18,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 
-// Initialisation sécurisée (évite le crash si pas de clés au démarrage)
+// Initialisation sécurisée
 const genAI = process.env.GEMINI_API_KEY 
     ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) 
     : null;
@@ -46,7 +46,8 @@ const WORKFLOW_DEFINITION = {
             id: "3_sentiment_analysis",
             type: "ai.analyze",
             name: "Analyse Sentiment & Urgence",
-            prompt: "Analyse ce message: '{{content}}'. Retourne un JSON: { sentiment: score(-1 à 1), is_urgent: boolean, intent: string }."
+            // On précise bien dans le prompt de ne pas mettre de Markdown
+            prompt: "Analyse ce message: '{{content}}'. Retourne UNIQUEMENT un JSON brut (sans balises markdown) sous ce format: { \"sentiment\": score(-1 à 1), \"is_urgent\": boolean, \"intent\": string }."
         },
         {
             id: "4_router_brain",
@@ -168,19 +169,31 @@ function executeRouter(context, routes) {
     return null;
 }
 
+// --- FONCTION CORRIGÉE SIMPLIFIÉE ---
 async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée (Clé manquante).";
     try {
+        // CORRECTION ICI : On a enlevé 'generationConfig' qui faisait planter
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
-            generationConfig: { responseMimeType: isJson ? "application/json" : "text/plain" }
+            model: "gemini-1.5-flash"
         });
+        
         const result = await model.generateContent(prompt);
-        return isJson ? JSON.parse(result.response.text()) : result.response.text();
+        let textResponse = result.response.text();
+
+        // Nettoyage manuel du JSON si l'IA ajoute des ```json ... ```
+        if (isJson) {
+            textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(textResponse);
+        }
+        
+        return textResponse;
+
     } catch (e) {
-    console.error("ERREUR GOOGLE :", e);
-    return isJson ? { sentiment: 0.5 } : "ERREUR CRITIQUE: " + e.message;
-}
+        console.error("ERREUR GOOGLE :", e);
+        // On laisse l'affichage de l'erreur au cas où, mais ça ne devrait plus planter
+        return isJson ? { sentiment: 0.5 } : "ERREUR : " + e.message;
+    }
 }
 
 async function searchMemory(text) {
