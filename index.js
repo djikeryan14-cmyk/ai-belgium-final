@@ -14,6 +14,7 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 
@@ -177,8 +178,9 @@ async function callGemini(prompt, isJson) {
         const result = await model.generateContent(prompt);
         return isJson ? JSON.parse(result.response.text()) : result.response.text();
     } catch (e) {
-        return isJson ? { sentiment: 0.5 } : "Erreur IA temporaire.";
-    }
+    console.error("ERREUR GOOGLE :", e);
+    return isJson ? { sentiment: 0.5 } : "ERREUR CRITIQUE: " + e.message;
+}
 }
 
 async function searchMemory(text) {
@@ -230,6 +232,4 @@ app.post('/webhook', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Serveur actif sur le port ${PORT}`);
-
 });
-
