@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION FINALE (STABLE)
+// MOTEUR SAAS AI BELGIUM - VERSION FINALE (MASTER)
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -18,7 +18,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 
-// Initialisation sécurisée
+// Initialisation
 const genAI = process.env.GEMINI_API_KEY 
     ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) 
     : null;
@@ -168,24 +168,21 @@ function executeRouter(context, routes) {
     return null;
 }
 
-// --- FONCTION CORRIGÉE (VERSION GEMINI-PRO) ---
 async function callGemini(prompt, isJson) {
-    if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée (Clé manquante).";
+    if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée.";
     try {
-        // CORRECTION : Retour au modèle "gemini-pro" qui est le plus compatible
+        // AVEC LA NOUVELLE VERSION DU PACKAGE, FLASH FONCTIONNE PARFAITEMENT
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-pro"
+            model: "gemini-1.5-flash" 
         });
         
         const result = await model.generateContent(prompt);
         let textResponse = result.response.text();
 
-        // Nettoyage manuel du JSON
         if (isJson) {
             textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
             return JSON.parse(textResponse);
         }
-        
         return textResponse;
 
     } catch (e) {
