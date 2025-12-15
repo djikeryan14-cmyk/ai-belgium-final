@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION FINALE (CORRIGÉE)
+// MOTEUR SAAS AI BELGIUM - VERSION FINALE (STABLE)
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -46,7 +46,6 @@ const WORKFLOW_DEFINITION = {
             id: "3_sentiment_analysis",
             type: "ai.analyze",
             name: "Analyse Sentiment & Urgence",
-            // On précise bien dans le prompt de ne pas mettre de Markdown
             prompt: "Analyse ce message: '{{content}}'. Retourne UNIQUEMENT un JSON brut (sans balises markdown) sous ce format: { \"sentiment\": score(-1 à 1), \"is_urgent\": boolean, \"intent\": string }."
         },
         {
@@ -169,19 +168,19 @@ function executeRouter(context, routes) {
     return null;
 }
 
-// --- FONCTION CORRIGÉE SIMPLIFIÉE ---
+// --- FONCTION CORRIGÉE (VERSION GEMINI-PRO) ---
 async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée (Clé manquante).";
     try {
-        // CORRECTION ICI : On a enlevé 'generationConfig' qui faisait planter
+        // CORRECTION : Retour au modèle "gemini-pro" qui est le plus compatible
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash"
+            model: "gemini-pro"
         });
         
         const result = await model.generateContent(prompt);
         let textResponse = result.response.text();
 
-        // Nettoyage manuel du JSON si l'IA ajoute des ```json ... ```
+        // Nettoyage manuel du JSON
         if (isJson) {
             textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
             return JSON.parse(textResponse);
@@ -191,7 +190,6 @@ async function callGemini(prompt, isJson) {
 
     } catch (e) {
         console.error("ERREUR GOOGLE :", e);
-        // On laisse l'affichage de l'erreur au cas où, mais ça ne devrait plus planter
         return isJson ? { sentiment: 0.5 } : "ERREUR : " + e.message;
     }
 }
