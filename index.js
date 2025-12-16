@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION CLEAN CACHE
+// MOTEUR SAAS AI BELGIUM - VERSION EXP (PASSE-MURAILLE)
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -27,7 +27,7 @@ const sb = (process.env.SUPABASE_URL && process.env.SUPABASE_KEY)
 
 // --- WORKFLOW ---
 const WORKFLOW_DEFINITION = {
-    name: "AI_System_BE_Final",
+    name: "AI_System_BE_Final_Exp",
     nodes: [
         { id: "1_normalize", type: "code.function", code: "return { ...input, timestamp: new Date(), trace_id: context.trace_id };" },
         { id: "2_memory_recall", type: "ai.memory_recall", name: "Recherche Historique", config: { query: "{{content}}" } },
@@ -96,23 +96,25 @@ async function runWorkflow(inputData) {
 function fillPrompt(t, c) { return t.replace(/\{\{(.*?)\}\}/g, (m, p) => { let v=c; p.split('.').forEach(k=>v=v?v[k]:undefined); return typeof v==='object'?JSON.stringify(v):(v||""); }); }
 function executeRouter(c, r) { for (const route of r) { try { if(new Function('context', `return ${route.rule}`)(c)) return route.output; } catch(e){} } return null; }
 
-// --- FONCTION GEMINI (1.5 FLASH) ---
+// --- FONCTION GEMINI (VERSION EXPERIMENTALE 2.0) ---
 async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée.";
     try {
-        // ON UTILISE 1.5-FLASH APRES LE CLEAN CACHE
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // 🔥 ESSAI AVEC LA VERSION 2.0 EXPERIMENTALE (Souvent non bloquée en Europe)
+        // Si celle-ci échoue, on tentera 'gemini-1.5-flash-8b'
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
         const result = await model.generateContent(prompt);
         let txt = result.response.text();
+        
         if (isJson) {
             txt = txt.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(txt);
+            try { return JSON.parse(txt); } catch (e) { return { sentiment: 0 }; }
         }
         return txt;
     } catch (e) {
         console.error("GOOGLE ERROR:", e);
-        // On affiche l'erreur complète pour être sûr
-        return isJson ? { sentiment: 0.5 } : "ERREUR TECHNIQUE: " + e.message;
+        return isJson ? { sentiment: 0.5 } : "ERREUR : " + e.message;
     }
 }
 
