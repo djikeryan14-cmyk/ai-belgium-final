@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION CORRIGÉE (1.5 FLASH)
+// MOTEUR SAAS AI BELGIUM - VERSION CLEAN CACHE
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -14,10 +14,9 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 
-// Initialisation sécurisée
+// Initialisation
 const genAI = process.env.GEMINI_API_KEY 
     ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) 
     : null;
@@ -28,223 +27,119 @@ const sb = (process.env.SUPABASE_URL && process.env.SUPABASE_KEY)
 
 // --- WORKFLOW ---
 const WORKFLOW_DEFINITION = {
-    name: "AI_System_BE_V9_Innovative",
+    name: "AI_System_BE_Final",
     nodes: [
-        {
-            id: "1_normalize",
-            type: "code.function",
-            code: "return { ...input, timestamp: new Date(), trace_id: context.trace_id };"
+        { id: "1_normalize", type: "code.function", code: "return { ...input, timestamp: new Date(), trace_id: context.trace_id };" },
+        { id: "2_memory_recall", type: "ai.memory_recall", name: "Recherche Historique", config: { query: "{{content}}" } },
+        { 
+            id: "3_sentiment_analysis", 
+            type: "ai.analyze", 
+            name: "Analyse", 
+            prompt: "Analyse ce message: '{{content}}'. Retourne UNIQUEMENT un JSON brut : { \"sentiment\": score(-1 à 1), \"is_urgent\": boolean, \"intent\": string }." 
         },
-        {
-            id: "2_memory_recall",
-            type: "ai.memory_recall",
-            name: "🧠 Recherche Historique",
-            config: { query: "{{content}}" }
-        },
-        {
-            id: "3_sentiment_analysis",
-            type: "ai.analyze",
-            name: "Analyse Sentiment & Urgence",
-            // Prompt strict pour éviter le markdown
-            prompt: "Analyse ce message: '{{content}}'. Retourne UNIQUEMENT un JSON brut (sans ```json au début) : { \"sentiment\": score(-1 à 1), \"is_urgent\": boolean, \"intent\": string }."
-        },
-        {
-            id: "4_router_brain",
-            type: "logic.router",
-            name: "🔀 Aiguillage Stratégique",
+        { 
+            id: "4_router_brain", 
+            type: "logic.router", 
+            name: "Routeur", 
             routes: [
                 { rule: "context['3_sentiment_analysis'].is_urgent === true", output: "99_escalation" },
                 { rule: "context['3_sentiment_analysis'].intent === 'rdv'", output: "10_booking" },
                 { rule: "true", output: "5_cultural_response" }
             ]
         },
-        {
-            id: "5_cultural_response",
-            type: "ai.generate",
-            name: "🇧🇪 Réponse Belge",
-            prompt: "Agis comme un assistant PME belge. \nInfo Mémoire: {{2_memory_recall}}\nMessage Client: {{content}}\nInstruction: Réponds poliment. Si le client est en Wallonie, utilise des termes locaux si approprié. Sois serviable."
+        { 
+            id: "5_cultural_response", 
+            type: "ai.generate", 
+            name: "Reponse Belge", 
+            prompt: "Agis comme un assistant PME belge. Contexte: {{2_memory_recall}}. Message: {{content}}. Réponds poliment et utilement." 
         },
-        {
-            id: "99_escalation",
-            type: "system.action",
-            name: "🚨 ALERTE MANAGER",
-            action: "send_sms_alert",
-            payload: "Client mécontent détecté !"
-        }
+        { id: "99_escalation", type: "system.action", name: "Alerte", action: "send_sms_alert", payload: "Urgence détectée" }
     ]
 };
 
-// ==========================================
-// ENGINE
-// ==========================================
+// --- ENGINE ---
 async function runWorkflow(inputData) {
-    let context = { 
-        input: inputData, 
-        content: inputData.message || inputData.transcript || "Message vide",
-        trace_id: uuidv4(),
-        logs: [] 
-    };
-
-    console.log(`🚀 Démarrage Workflow [${context.trace_id}]`);
+    let context = { input: inputData, content: inputData.message || "Vide", trace_id: uuidv4(), logs: [] };
+    console.log(`🚀 Start [${context.trace_id}]`);
 
     const nodes = WORKFLOW_DEFINITION.nodes;
-    let currentNodeIndex = 0;
-
-    while (currentNodeIndex < nodes.length) {
-        const node = nodes[currentNodeIndex];
-        console.log(`⚙️ Node: ${node.id} (${node.type})`);
-
+    let idx = 0;
+    while (idx < nodes.length) {
+        const node = nodes[idx];
         try {
             let result = null;
-
-            switch (node.type) {
-                case 'code.function':
-                    const func = new Function('input', 'context', node.code);
-                    result = func(context.input, context);
-                    break;
-
-                case 'ai.memory_recall':
-                    result = await searchMemory(context.content);
-                    break;
-
-                case 'ai.analyze':
-                case 'ai.generate':
-                    const filledPrompt = fillPrompt(node.prompt, context);
-                    result = await callGemini(filledPrompt, node.type === 'ai.analyze');
-                    break;
-
-                case 'logic.router':
-                    const nextNodeId = executeRouter(context, node.routes);
-                    if (nextNodeId) {
-                        const nextIndex = nodes.findIndex(n => n.id === nextNodeId);
-                        if (nextIndex !== -1) {
-                            currentNodeIndex = nextIndex;
-                            continue;
-                        }
-                    }
-                    break;
-
-                case 'system.action':
-                    console.log(`🚨 Action déclenchée: ${node.action}`);
-                    result = { status: "executed", action: node.action };
-                    break;
+            if (node.type === 'code.function') {
+                result = new Function('input', 'context', node.code)(context.input, context);
+            } else if (node.type === 'ai.memory_recall') {
+                result = await searchMemory(context.content);
+            } else if (node.type === 'ai.analyze' || node.type === 'ai.generate') {
+                const filledPrompt = fillPrompt(node.prompt, context);
+                result = await callGemini(filledPrompt, node.type === 'ai.analyze');
+            } else if (node.type === 'logic.router') {
+                const nextId = executeRouter(context, node.routes);
+                if (nextId) {
+                    const nextIdx = nodes.findIndex(n => n.id === nextId);
+                    if (nextIdx !== -1) { idx = nextIdx; continue; }
+                }
+            } else if (node.type === 'system.action') {
+                result = { status: "executed", action: node.action };
             }
-
             context[node.id] = result;
-            context.logs.push({ node: node.id, status: 'success', output: result });
-            currentNodeIndex++;
-
-        } catch (error) {
-            console.error(`❌ Node Error ${node.id}:`, error.message);
-            break;
-        }
+            context.logs.push({ node: node.id, output: result });
+            idx++;
+        } catch (e) { console.error(`Error Node ${node.id}`, e); break; }
     }
-
     await saveToMemory(context.content, context);
     return context;
 }
 
-// ==========================================
-// UTILITAIRES
-// ==========================================
-function fillPrompt(template, context) {
-    if (!template) return "";
-    return template.replace(/\{\{(.*?)\}\}/g, (match, path) => {
-        const keys = path.split('.');
-        let value = context;
-        for (let key of keys) value = value ? value[key] : undefined;
-        return typeof value === 'object' ? JSON.stringify(value) : (value || "");
-    });
-}
+function fillPrompt(t, c) { return t.replace(/\{\{(.*?)\}\}/g, (m, p) => { let v=c; p.split('.').forEach(k=>v=v?v[k]:undefined); return typeof v==='object'?JSON.stringify(v):(v||""); }); }
+function executeRouter(c, r) { for (const route of r) { try { if(new Function('context', `return ${route.rule}`)(c)) return route.output; } catch(e){} } return null; }
 
-function executeRouter(context, routes) {
-    for (const route of routes) {
-        try {
-            const evaluator = new Function('context', `return ${route.rule}`);
-            if (evaluator(context)) return route.output;
-        } catch (e) { console.error("Route Error", e); }
-    }
-    return null;
-}
-
+// --- FONCTION GEMINI (1.5 FLASH) ---
 async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée.";
     try {
-        // ✅ CORRECTION : ON UTILISE LA VERSION 1.5-FLASH (La vraie version stable)
-        // On retire 'generationConfig' pour éviter les bugs sur les vieilles versions
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash" 
-        });
-        
+        // ON UTILISE 1.5-FLASH APRES LE CLEAN CACHE
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent(prompt);
-        let textResponse = result.response.text();
-
-        // Nettoyage manuel (plus robuste que responseMimeType)
+        let txt = result.response.text();
         if (isJson) {
-            textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-            try {
-                return JSON.parse(textResponse);
-            } catch (jsonError) {
-                console.error("JSON mal formé par l'IA", textResponse);
-                return { sentiment: 0, error: "JSON invalide" };
-            }
+            txt = txt.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(txt);
         }
-        return textResponse;
-
+        return txt;
     } catch (e) {
-        console.error("❌ GoogleGenerativeAI Error:", e);
-        return isJson ? { sentiment: 0.5 } : "ERREUR CRITIQUE: " + e.message;
+        console.error("GOOGLE ERROR:", e);
+        // On affiche l'erreur complète pour être sûr
+        return isJson ? { sentiment: 0.5 } : "ERREUR TECHNIQUE: " + e.message;
     }
 }
 
 async function searchMemory(text) {
-    if (!sb || !genAI) return "Mémoire désactivée.";
+    if (!sb || !genAI) return "No Memory";
     try {
         const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-        const embResult = await model.embedContent(text);
-        const { data } = await sb.rpc('match_documents', {
-            query_embedding: embResult.embedding.values,
-            match_threshold: 0.5,
-            match_count: 3
-        });
-        if (!data || !data.length) return "Aucun historique.";
-        return data.map(d => d.content).join(" | ");
-    } catch (e) { return "Erreur accès mémoire."; }
+        const emb = await model.embedContent(text);
+        const { data } = await sb.rpc('match_documents', { query_embedding: emb.embedding.values, match_threshold: 0.5, match_count: 2 });
+        return data ? data.map(d=>d.content).join(" | ") : "Rien";
+    } catch (e) { return "Erreur Memoire"; }
 }
 
 async function saveToMemory(text, context) {
     if (!sb || !genAI) return;
     try {
         const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-        const embResult = await model.embedContent(text);
-        await sb.from('documents').insert({
-            content: text,
-            metadata: { trace_id: context.trace_id },
-            embedding: embResult.embedding.values
-        });
-    } catch (e) { console.error("❌ Save Memory Error"); }
+        const emb = await model.embedContent(text);
+        await sb.from('documents').insert({ content: text, metadata: {trace_id: context.trace_id}, embedding: emb.embedding.values });
+    } catch(e) {}
 }
 
-// ==========================================
-// SERVEUR
-// ==========================================
-app.get('/', (req, res) => {
-    res.send('🇧🇪 AI Belgium Backend is Running! Envoyer POST sur /webhook');
-});
-
 app.post('/webhook', async (req, res) => {
-    const input = req.body;
-    if (!input.message && !input.transcript) return res.status(400).json({ error: "Message manquant" });
-
-    const resultContext = await runWorkflow(input);
-
-    // Priorité à la réponse culturelle, sinon urgence, sinon confirmation simple
-    const finalResponse = resultContext['5_cultural_response'] || 
-                          (resultContext['99_escalation'] ? "Un manager va vous rappeler en urgence." : "Bien reçu.");
-
-    res.json({ success: true, response: finalResponse });
+    if (!req.body.message) return res.status(400).json({ error: "No message" });
+    const ctx = await runWorkflow(req.body);
+    const resp = ctx['5_cultural_response'] || (ctx['99_escalation'] ? "Un manager arrive." : "Reçu.");
+    res.json({ success: true, response: resp });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serveur actif sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on ${PORT}`));
