@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION INNOVATIVE
+// MOTEUR SAAS AI BELGIUM - VERSION CORRIGÉE (1.5 FLASH)
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -45,7 +45,8 @@ const WORKFLOW_DEFINITION = {
             id: "3_sentiment_analysis",
             type: "ai.analyze",
             name: "Analyse Sentiment & Urgence",
-            prompt: "Analyse ce message: '{{content}}'. Retourne un JSON: { sentiment: score(-1 à 1), is_urgent: boolean, intent: string }."
+            // Prompt strict pour éviter le markdown
+            prompt: "Analyse ce message: '{{content}}'. Retourne UNIQUEMENT un JSON brut (sans ```json au début) : { \"sentiment\": score(-1 à 1), \"is_urgent\": boolean, \"intent\": string }."
         },
         {
             id: "4_router_brain",
@@ -98,7 +99,8 @@ async function runWorkflow(inputData) {
 
             switch (node.type) {
                 case 'code.function':
-                    result = new Function('input', 'context', node.code)(context.input, context);
+                    const func = new Function('input', 'context', node.code);
+                    result = func(context.input, context);
                     break;
 
                 case 'ai.memory_recall':
@@ -158,7 +160,8 @@ function fillPrompt(template, context) {
 function executeRouter(context, routes) {
     for (const route of routes) {
         try {
-            if (new Function('context', `return ${route.rule}`)(context)) return route.output;
+            const evaluator = new Function('context', `return ${route.rule}`);
+            if (evaluator(context)) return route.output;
         } catch (e) { console.error("Route Error", e); }
     }
     return null;
@@ -167,13 +170,27 @@ function executeRouter(context, routes) {
 async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée.";
     try {
+        // ✅ CORRECTION : ON UTILISE LA VERSION 1.5-FLASH (La vraie version stable)
+        // On retire 'generationConfig' pour éviter les bugs sur les vieilles versions
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash",  // ✅ Dernière version stable
-            generationConfig: { responseMimeType: isJson ? "application/json" : "text/plain" }
+            model: "gemini-1.5-flash" 
         });
+        
         const result = await model.generateContent(prompt);
-        if (isJson) return JSON.parse(result.response.text());
-        return result.response.text();
+        let textResponse = result.response.text();
+
+        // Nettoyage manuel (plus robuste que responseMimeType)
+        if (isJson) {
+            textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+            try {
+                return JSON.parse(textResponse);
+            } catch (jsonError) {
+                console.error("JSON mal formé par l'IA", textResponse);
+                return { sentiment: 0, error: "JSON invalide" };
+            }
+        }
+        return textResponse;
+
     } catch (e) {
         console.error("❌ GoogleGenerativeAI Error:", e);
         return isJson ? { sentiment: 0.5 } : "ERREUR CRITIQUE: " + e.message;
@@ -221,8 +238,9 @@ app.post('/webhook', async (req, res) => {
 
     const resultContext = await runWorkflow(input);
 
+    // Priorité à la réponse culturelle, sinon urgence, sinon confirmation simple
     const finalResponse = resultContext['5_cultural_response'] || 
-                          (resultContext['99_escalation'] ? "Un manager va vous rappeler." : "Reçu.");
+                          (resultContext['99_escalation'] ? "Un manager va vous rappeler en urgence." : "Bien reçu.");
 
     res.json({ success: true, response: finalResponse });
 });
