@@ -1,5 +1,5 @@
 // ==========================================
-// MOTEUR SAAS AI BELGIUM - VERSION FINALE (MASTER)
+// MOTEUR SAAS AI BELGIUM - VERSION INNOVATIVE
 // ==========================================
 require('dotenv').config();
 const express = require('express');
@@ -14,11 +14,10 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 
-// Initialisation
+// Initialisation sécurisée
 const genAI = process.env.GEMINI_API_KEY 
     ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) 
     : null;
@@ -27,9 +26,9 @@ const sb = (process.env.SUPABASE_URL && process.env.SUPABASE_KEY)
     ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
     : null;
 
-// --- LE WORKFLOW ---
+// --- WORKFLOW ---
 const WORKFLOW_DEFINITION = {
-    name: "AI_System_BE_V8_Platinum",
+    name: "AI_System_BE_V9_Innovative",
     nodes: [
         {
             id: "1_normalize",
@@ -46,7 +45,7 @@ const WORKFLOW_DEFINITION = {
             id: "3_sentiment_analysis",
             type: "ai.analyze",
             name: "Analyse Sentiment & Urgence",
-            prompt: "Analyse ce message: '{{content}}'. Retourne UNIQUEMENT un JSON brut (sans balises markdown) sous ce format: { \"sentiment\": score(-1 à 1), \"is_urgent\": boolean, \"intent\": string }."
+            prompt: "Analyse ce message: '{{content}}'. Retourne un JSON: { sentiment: score(-1 à 1), is_urgent: boolean, intent: string }."
         },
         {
             id: "4_router_brain",
@@ -75,9 +74,8 @@ const WORKFLOW_DEFINITION = {
 };
 
 // ==========================================
-// LE MOTEUR D'EXÉCUTION (ENGINE)
+// ENGINE
 // ==========================================
-
 async function runWorkflow(inputData) {
     let context = { 
         input: inputData, 
@@ -88,20 +86,19 @@ async function runWorkflow(inputData) {
 
     console.log(`🚀 Démarrage Workflow [${context.trace_id}]`);
 
-    let currentNodeIndex = 0;
     const nodes = WORKFLOW_DEFINITION.nodes;
+    let currentNodeIndex = 0;
 
     while (currentNodeIndex < nodes.length) {
         const node = nodes[currentNodeIndex];
-        console.log(`⚙️ Exécution Node: ${node.id} (${node.type})`);
-        
+        console.log(`⚙️ Node: ${node.id} (${node.type})`);
+
         try {
             let result = null;
 
             switch (node.type) {
                 case 'code.function':
-                    const func = new Function('input', 'context', node.code);
-                    result = func(context.input, context);
+                    result = new Function('input', 'context', node.code)(context.input, context);
                     break;
 
                 case 'ai.memory_recall':
@@ -126,6 +123,7 @@ async function runWorkflow(inputData) {
                     break;
 
                 case 'system.action':
+                    console.log(`🚨 Action déclenchée: ${node.action}`);
                     result = { status: "executed", action: node.action };
                     break;
             }
@@ -135,7 +133,7 @@ async function runWorkflow(inputData) {
             currentNodeIndex++;
 
         } catch (error) {
-            console.error(`❌ Erreur noeud ${node.id}:`, error.message);
+            console.error(`❌ Node Error ${node.id}:`, error.message);
             break;
         }
     }
@@ -145,9 +143,8 @@ async function runWorkflow(inputData) {
 }
 
 // ==========================================
-// FONCTIONS UTILITAIRES
+// UTILITAIRES
 // ==========================================
-
 function fillPrompt(template, context) {
     if (!template) return "";
     return template.replace(/\{\{(.*?)\}\}/g, (match, path) => {
@@ -161,9 +158,8 @@ function fillPrompt(template, context) {
 function executeRouter(context, routes) {
     for (const route of routes) {
         try {
-            const evaluator = new Function('context', `return ${route.rule}`);
-            if (evaluator(context)) return route.output;
-        } catch (e) { console.error("Erreur routeur", e); }
+            if (new Function('context', `return ${route.rule}`)(context)) return route.output;
+        } catch (e) { console.error("Route Error", e); }
     }
     return null;
 }
@@ -171,23 +167,16 @@ function executeRouter(context, routes) {
 async function callGemini(prompt, isJson) {
     if (!genAI) return isJson ? { sentiment: 0 } : "IA non configurée.";
     try {
-        // AVEC LA NOUVELLE VERSION DU PACKAGE, FLASH FONCTIONNE PARFAITEMENT
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash" 
+            model: "gemini-2.5-flash",  // ✅ Dernière version stable
+            generationConfig: { responseMimeType: isJson ? "application/json" : "text/plain" }
         });
-        
         const result = await model.generateContent(prompt);
-        let textResponse = result.response.text();
-
-        if (isJson) {
-            textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(textResponse);
-        }
-        return textResponse;
-
+        if (isJson) return JSON.parse(result.response.text());
+        return result.response.text();
     } catch (e) {
-        console.error("ERREUR GOOGLE :", e);
-        return isJson ? { sentiment: 0.5 } : "ERREUR : " + e.message;
+        console.error("❌ GoogleGenerativeAI Error:", e);
+        return isJson ? { sentiment: 0.5 } : "ERREUR CRITIQUE: " + e.message;
     }
 }
 
@@ -199,7 +188,7 @@ async function searchMemory(text) {
         const { data } = await sb.rpc('match_documents', {
             query_embedding: embResult.embedding.values,
             match_threshold: 0.5,
-            match_count: 2
+            match_count: 3
         });
         if (!data || !data.length) return "Aucun historique.";
         return data.map(d => d.content).join(" | ");
@@ -216,7 +205,7 @@ async function saveToMemory(text, context) {
             metadata: { trace_id: context.trace_id },
             embedding: embResult.embedding.values
         });
-    } catch (e) { console.error("Erreur save mémoire"); }
+    } catch (e) { console.error("❌ Save Memory Error"); }
 }
 
 // ==========================================
@@ -228,13 +217,13 @@ app.get('/', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
     const input = req.body;
-    if (!input.message && !input.transcript) {
-        return res.status(400).json({ error: "Message manquant" });
-    }
+    if (!input.message && !input.transcript) return res.status(400).json({ error: "Message manquant" });
+
     const resultContext = await runWorkflow(input);
+
     const finalResponse = resultContext['5_cultural_response'] || 
                           (resultContext['99_escalation'] ? "Un manager va vous rappeler." : "Reçu.");
-    
+
     res.json({ success: true, response: finalResponse });
 });
 
